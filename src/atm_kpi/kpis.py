@@ -77,6 +77,41 @@ def delay_by_cause(df: pd.DataFrame, causes: dict) -> pd.DataFrame:
     return out.reset_index().sort_values("sum", ascending=False)
 
 
+def aggregate(df: pd.DataFrame) -> pd.DataFrame:
+    """Additive sums per departure airport and month.
+
+    Every headline KPI can be rebuilt exactly from these sums, so a report or
+    web page can filter and combine airports/months without the raw flights.
+    """
+    df = df if "co2_kg" in df else add_emissions(df)
+    df = df.assign(
+        month=df["date"].dt.to_period("M").astype(str),
+        punctual=(df["arr_delay_min"] <= PUNCTUALITY_THRESHOLD_MIN).astype(int),
+        regulated=(df["atfm_delay_min"] > 0).astype(int),
+        seat_km=df["seats"] * df["distance_km"],
+    )
+    return (df.groupby(["adep", "month"])
+              .agg(flights=("flight_id", "size"), punctual=("punctual", "sum"),
+                   atfm_min=("atfm_delay_min", "sum"), regulated=("regulated", "sum"),
+                   add_taxi_min=("add_taxi_min", "sum"), co2_kg=("co2_kg", "sum"),
+                   co2_add_taxi_kg=("co2_add_taxi_kg", "sum"), seat_km=("seat_km", "sum"))
+              .reset_index())
+
+
+def summary_from_aggregate(agg: pd.DataFrame) -> dict:
+    s = agg.sum(numeric_only=True)
+    return {
+        "flights": int(s["flights"]),
+        "punctuality_pct": 100 * s["punctual"] / s["flights"],
+        "atfm_per_flight": s["atfm_min"] / s["flights"],
+        "regulated_pct": 100 * s["regulated"] / s["flights"],
+        "avg_delay_regulated": s["atfm_min"] / s["regulated"] if s["regulated"] else 0.0,
+        "add_taxi_min": s["add_taxi_min"] / s["flights"],
+        "co2_t": s["co2_kg"] / 1000,
+        "co2_g_per_seat_km": 1000 * s["co2_kg"] / s["seat_km"],
+    }
+
+
 def airport_ranking(df: pd.DataFrame) -> pd.DataFrame:
     df = df if "co2_kg" in df else add_emissions(df)
     g = df.groupby("adep")

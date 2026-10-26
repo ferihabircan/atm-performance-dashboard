@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATM Performance Dashboard</title>
+<meta name="description" content="Interactive dashboard of European ATM performance indicators: punctuality, ATFM delay by cause, additional taxi-out time and CO2 emissions.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<style>
+  .filters { position: sticky; top: 54px; z-index: 40; background: var(--bg); padding: 12px 0; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font: inherit; font-size: 13px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 4px 11px; cursor: pointer; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip.all { border-style: dashed; }
+  .frow { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: end; }
+  .insights { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .insights li { background: var(--surface-2); border-radius: 8px; padding: 10px 14px; font-size: 14.5px; }
+  .insights li b { color: var(--text); }
+  th.sort { cursor: pointer; user-select: none; }
+  th.sort:hover { color: var(--text); }
+  .bar { display: inline-block; height: 6px; border-radius: 3px; background: var(--accent); vertical-align: middle; margin-left: 6px; opacity: .7; }
+  .dl { font: inherit; font-size: 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  .kpis.dash { margin-top: 0; }
+  @media (max-width: 720px) { .filters { position: static; } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#">ATM Performance &amp; CO2 <span>· ATM data portfolio</span></a>
+    <nav>
+      <a href="#dashboard">Dashboard</a>
+      <a href="#definitions">KPI definitions</a>
+      <a href="#co2">CO2 method</a>
+      <a href="#run">Run it</a>
+    </nav>
+    <button class="theme-toggle" aria-label="Toggle dark mode">☾</button>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Performance review · Data visualisation · Environment</p>
+    <h1>One year of European traffic, four KPIs, and what delay costs in CO2</h1>
+    <p class="lead">An interactive dashboard of the indicators used in European ATM performance
+      reporting: punctuality, ATFM delay and its causes, additional taxi-out time, and the CO2 that
+      operational inefficiency adds. Filter by airport and period below; everything runs in your browser.</p>
+    <div class="btns">
+      <a class="btn primary" href="#dashboard">Open the dashboard</a>
+      <a class="btn ghost" href="https://github.com/ferihabircan/atm-performance-dashboard">View code on GitHub</a>
+    </div>
+    <div class="tags">
+      <span class="tag">Python</span><span class="tag">pandas</span><span class="tag">Streamlit</span>
+      <span class="tag">Plotly</span><span class="tag">KPI design</span><span class="tag">CO2 estimation</span>
+    </div>
+  </div>
+</div>
+
+<main class="wrap">
+  <section id="dashboard" style="padding-top:36px">
+    <div class="filters">
+      <div class="frow">
+        <div class="control" style="flex:1;min-width:260px"><label>Departure airports</label><div class="chips" id="f-ap"></div></div>
+        <div class="control"><label for="f-from">From</label><select id="f-from"></select></div>
+        <div class="control"><label for="f-to">To</label><select id="f-to"></select></div>
+      </div>
+    </div>
+
+    <div class="kpis dash" id="kpis"></div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="card"><h3>Arrival punctuality</h3><p>Share of flights arriving within 15 minutes of schedule.</p>
+        <div id="ch-punct" class="chart"></div></div>
+      <div class="card"><h3>ATFM delay per flight</h3><p>Average minutes of flow-management delay per departure.</p>
+        <div id="ch-atfm" class="chart"></div></div>
+      <div class="card"><h3>What causes the delay</h3><p>ATFM delay minutes by regulation reason.</p>
+        <div id="ch-cause" class="chart"></div></div>
+      <div class="card"><h3>What the dashboard is telling us</h3><p style="margin-bottom:12px">Generated from the current selection.</p>
+        <ul class="insights" id="insights"></ul></div>
+    </div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="card"><h3>Where</h3><p>Circle size = departures, colour = ATFM delay per flight.</p>
+        <div id="ch-map" class="chart tall"></div></div>
+      <div class="card"><h3>Taxi-out inefficiency and its CO2</h3><p>Additional taxi-out minutes per flight (bars) and the CO2 they add (line).</p>
+        <div id="ch-taxi" class="chart tall"></div></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+        <div><h3>Airport ranking</h3><p>Click a column to sort.</p></div>
+        <button class="dl" id="dl">Download CSV</button>
+      </div>
+      <div class="table-wrap"><table id="rank"></table></div>
+    </div>
+  </section>
+
+  <section id="definitions">
+    <h2>KPI definitions</h2>
+    <p class="sub">Defined in the spirit of the EUROCONTROL Performance Review reports. All of them are
+      ratios of additive sums, so any combination of airports and months is computed exactly from
+      monthly aggregates (a unit test checks this against the raw flights).</p>
+    <div class="card table-wrap"><table>
+      <thead><tr><th>KPI</th><th>Definition</th><th>Why it matters</th></tr></thead>
+      <tbody>
+        <tr><td><b>Arrival punctuality</b></td><td>Flights with arrival delay ≤ 15 min ÷ all flights</td><td>What passengers and airlines feel</td></tr>
+        <tr><td><b>ATFM delay per flight</b></td><td>Total ATFM delay minutes ÷ all flights</td><td>Headline network capacity indicator</td></tr>
+        <tr><td><b>Regulated flights</b></td><td>Flights with ATFM delay &gt; 0 ÷ all flights</td><td>How widespread flow measures are</td></tr>
+        <tr><td><b>Additional taxi-out</b></td><td>Actual − unimpeded taxi-out time, per flight</td><td>Airport congestion; fuel burned on the ground</td></tr>
+        <tr><td><b>CO2 intensity</b></td><td>CO2 (g) ÷ seat-km</td><td>Comparable environmental efficiency</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="co2">
+    <h2>CO2 method</h2>
+    <div class="grid2">
+      <div class="card"><h3>Formula</h3>
+<pre style="margin:8px 0 0"><code>fuel = LTO fuel(type)
+     + cruise fuel per km(type) × distance
+     + taxi fuel flow(type) × additional taxi min
+CO2  = 3.16 × fuel        (ICAO factor)</code></pre></div>
+      <div class="card"><h3>Caveats</h3><ul class="clean">
+        <li><strong>Indicative coefficients.</strong> Per-type fuel values are for illustration, not certified factors.</li>
+        <li><strong>Better sources:</strong> the ICAO Carbon Emissions Calculator methodology or EUROCONTROL emission models.</li>
+        <li><strong>Synthetic demo data.</strong> 62,080 flights at ten airports in 2025, built to reproduce typical seasonal patterns.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section id="run">
+    <h2>Run it yourself</h2>
+    <p class="sub">The full Streamlit app adds CSV upload of your own flight data and a feedback form used in user-testing sessions.</p>
+<pre><code>git clone https://github.com/ferihabircan/atm-performance-dashboard
+cd atm-performance-dashboard
+pip install -r requirements.txt
+streamlit run app.py                                  # full app
+PYTHONPATH=src python scripts/export_site_data.py     # refresh this website
+PYTHONPATH=src pytest -q</code></pre>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <strong>More from this ATM data portfolio</strong>
+    <div class="others">
+      <a href="https://ferihabircan.github.io/atfm-delay-predictor/"><strong>ATFM Delay Predictor</strong>
+        <span>Gradient boosting with prediction intervals and a what-if tool</span></a>
+      <a href="https://ferihabircan.github.io/airspace-conflict-detector/"><strong>Airspace Conflict Detector</strong>
+        <span>Loss-of-separation detection and conflict prediction on an interactive map</span></a>
+    </div>
+    Feriha Bircan · <a href="https://github.com/ferihabircan">github.com/ferihabircan</a> · MIT License
+  </div>
+</footer>
+
+<script>
+let D, rows, months, sel = { aps: new Set(), from: 0, to: 11 }, sortKey = "atfm", sortDir = -1;
+const fmt = (v, d = 1) => Number(v).toLocaleString("en", { minimumFractionDigits: d, maximumFractionDigits: d });
+const mLabel = (m) => new Date(m + "-01").toLocaleString("en", { month: "short" });
+const CAUSE_COLORS = { C: "#3b82f6", S: "#8b5cf6", W: "#0ea5e9", G: "#f59e0b", I: "#ef4444", O: "#94a3b8" };
+
+function sum(list) {
+  const s = { flights: 0, punctual: 0, atfm_min: 0, regulated: 0, add_taxi_min: 0, co2_kg: 0, co2_add_taxi_kg: 0, seat_km: 0 };
+  for (const r of list) for (const k in s) s[k] += r[k];
+  return s;
+}
+const kpi = (s) => ({
+  punct: 100 * s.punctual / s.flights, atfm: s.atfm_min / s.flights, reg: 100 * s.regulated / s.flights,
+  regAvg: s.regulated ? s.atfm_min / s.regulated : 0, taxi: s.add_taxi_min / s.flights,
+  co2: s.co2_kg / 1000, co2i: 1000 * s.co2_kg / s.seat_km, taxiCo2: s.co2_add_taxi_kg / 1000, flights: s.flights,
+});
+
+function selected() {
+  const ms = new Set(months.slice(sel.from, sel.to + 1));
+  return rows.filter(r => sel.aps.has(r.adep) && ms.has(r.month));
+}
+
+function render() {
+  const cur = selected();
+  if (!cur.length) {
+    document.getElementById("kpis").innerHTML = `<div class="kpi"><div class="l">No data for this selection. Pick at least one airport.</div></div>`;
+    return;
+  }
+  const all = kpi(sum(rows)), k = kpi(sum(cur));
+  const delta = (v, ref, d, unit, better) => {
+    const diff = v - ref, good = better === "up" ? diff >= 0 : diff <= 0;
+    if (Math.abs(diff) < Math.pow(10, -d) / 2) return `<span style="color:var(--muted)">network average</span>`;
+    return `<span style="color:var(${good ? "--ok" : "--warn"})">${diff > 0 ? "+" : ""}${fmt(diff, d)}${unit} vs network</span>`;
+  };
+  const tiles = [
+    [fmt(k.flights, 0), "Flights", `${sel.aps.size} airports · ${sel.to - sel.from + 1} months`],
+    [fmt(k.punct) + "%", "Arrival punctuality", delta(k.punct, all.punct, 1, " pt", "up")],
+    [fmt(k.atfm, 2) + " min", "ATFM delay / flight", delta(k.atfm, all.atfm, 2, " min", "down")],
+    [fmt(k.reg) + "%", "Regulated flights", `avg ${fmt(k.regAvg)} min when regulated`],
+    [fmt(k.taxi) + " min", "Additional taxi-out", delta(k.taxi, all.taxi, 1, " min", "down")],
+    [fmt(k.co2i, 0) + " g", "CO2 per seat-km", `${fmt(k.co2 / 1000, 1)}k t total`],
+  ];
+  document.getElementById("kpis").innerHTML = tiles.map(([v, l, d]) =>
+    `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div><div class="d" style="color:var(--muted)">${d}</div></div>`).join("");
+
+  const ms = months.slice(sel.from, sel.to + 1);
+  const byM = ms.map(m => kpi(sum(cur.filter(r => r.month === m))));
+  const x = ms.map(mLabel), accent = css("--accent"), warn = css("--warn"), muted = css("--muted");
+
+  Plotly.react("ch-punct", [
+    { x, y: byM.map(v => v.punct), mode: "lines+markers", line: { color: accent, width: 2.5 }, name: "Selection",
+      hovertemplate: "%{x}: %{y:.1f}%<extra></extra>" },
+    { x, y: ms.map(m => kpi(sum(rows.filter(r => r.month === m))).punct), mode: "lines", name: "Network",
+      line: { color: muted, width: 1.5, dash: "dot" }, hovertemplate: "network %{y:.1f}%<extra></extra>" },
+  ], baseLayout({ yaxis: { ticksuffix: "%" } }), plotConfig);
+
+  Plotly.react("ch-atfm", [{ type: "bar", x, y: byM.map(v => v.atfm),
+    marker: { color: byM.map(v => v.atfm > all.atfm * 1.25 ? warn : accent) },
+    hovertemplate: "%{x}: %{y:.2f} min<extra></extra>" }],
+    baseLayout({ yaxis: { title: "min / flight" }, showlegend: false }), plotConfig);
+
+  const msSet = new Set(ms);
+  const causeSum = {};
+  for (const [ap, m, c, v] of D.cause_rows) if (sel.aps.has(ap) && msSet.has(m)) causeSum[c] = (causeSum[c] || 0) + v;
+  const cs = Object.entries(causeSum).sort((a, b) => b[1] - a[1]);
+  Plotly.react("ch-cause", [{ type: "pie", hole: .55, labels: cs.map(c => D.causes[c[0]]), values: cs.map(c => c[1]),
+    marker: { colors: cs.map(c => CAUSE_COLORS[c[0]]), line: { color: css("--surface"), width: 2 } },
+    textinfo: "percent", sort: false, hovertemplate: "%{label}: %{value:,.0f} min (%{percent})<extra></extra>" }],
+    baseLayout({ margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "v", x: 1, y: .5, font: { color: muted } } }), plotConfig);
+
+  // Airport map + ranking
+  const aps = [...sel.aps].map(ap => ({ ap, ...kpi(sum(cur.filter(r => r.adep === ap))) }));
+  Plotly.react("ch-map", [{ type: "scattergeo", lat: aps.map(a => D.airports[a.ap].lat), lon: aps.map(a => D.airports[a.ap].lon),
+    text: aps.map(a => `${D.airports[a.ap].name} (${a.ap})<br>${fmt(a.flights, 0)} flights<br>${fmt(a.atfm, 2)} min ATFM/flight<br>${fmt(a.punct)}% punctual`),
+    hoverinfo: "text", mode: "markers+text", textposition: "top center", texttemplate: aps.map(a => a.ap),
+    textfont: { size: 10, color: muted },
+    marker: { size: aps.map(a => 10 + Math.sqrt(a.flights) / 6), color: aps.map(a => a.atfm), colorscale: "OrRd",
+      cmin: Math.min(...aps.map(a => a.atfm)), cmax: Math.max(...aps.map(a => a.atfm)), line: { width: 1, color: css("--surface") }, colorbar: { title: "min", thickness: 10, len: .6 } } }],
+    baseLayout({ margin: { l: 0, r: 0, t: 0, b: 0 }, geo: { scope: "europe", projection: { type: "mercator" },
+      lataxis: { range: [36, 57] }, lonaxis: { range: [-8, 32] }, showland: true, landcolor: css("--surface-2"),
+      showcountries: true, countrycolor: css("--border"), coastlinecolor: css("--border"), bgcolor: "rgba(0,0,0,0)",
+      showocean: false, showframe: false } }), plotConfig);
+
+  Plotly.react("ch-taxi", [
+    { type: "bar", x, y: byM.map(v => v.taxi), name: "Add. taxi-out (min/flight)", marker: { color: accent },
+      hovertemplate: "%{x}: %{y:.2f} min<extra></extra>" },
+    { x, y: byM.map(v => v.taxiCo2), name: "CO2 from add. taxi (t)", yaxis: "y2", mode: "lines+markers",
+      line: { color: warn, width: 2 }, hovertemplate: "%{x}: %{y:,.0f} t<extra></extra>" },
+  ], baseLayout({ yaxis: { title: "min / flight" }, yaxis2: { overlaying: "y", side: "right", showgrid: false,
+      tickfont: { color: muted }, title: { text: "t CO2", font: { color: muted } } }, margin: { l: 56, r: 56, t: 36, b: 48 } }), plotConfig);
+
+  ranking(aps);
+  insights(k, all, ms, byM, cs, aps);
+}
+
+function ranking(aps) {
+  const cols = [["ap", "Airport"], ["flights", "Departures"], ["atfm", "ATFM / flight"], ["punct", "Punctuality"], ["taxi", "Add. taxi"], ["taxiCo2", "Taxi CO2 (t)"]];
+  const sorted = [...aps].sort((a, b) => (a[sortKey] > b[sortKey] ? 1 : -1) * sortDir);
+  const maxAtfm = Math.max(...aps.map(a => a.atfm));
+  const cell = (a, k) => k === "ap" ? `<b>${a.ap}</b> <span style="color:var(--muted)">${D.airports[a.ap].name}</span>`
+    : k === "flights" ? fmt(a.flights, 0) : k === "atfm" ? `${fmt(a.atfm, 2)}<span class="bar" style="width:${60 * a.atfm / maxAtfm}px"></span>`
+    : k === "punct" ? fmt(a.punct) + "%" : k === "taxi" ? fmt(a.taxi) + " min" : fmt(a.taxiCo2, 0);
+  const t = document.getElementById("rank");
+  t.innerHTML = `<thead><tr>${cols.map(([k, l]) => `<th class="sort" data-k="${k}">${l}${k === sortKey ? (sortDir > 0 ? " ↑" : " ↓") : ""}</th>`).join("")}</tr></thead>` +
+    `<tbody>${sorted.map(a => `<tr>${cols.map(([k]) => `<td>${cell(a, k)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+  t.querySelectorAll("th").forEach(th => th.onclick = () => {
+    sortDir = th.dataset.k === sortKey ? -sortDir : -1; sortKey = th.dataset.k; ranking(aps);
+  });
+  document.getElementById("dl").onclick = () => {
+    const csv = ["airport,name,departures,atfm_per_flight,punctuality_pct,add_taxi_min,co2_add_taxi_t"]
+      .concat(sorted.map(a => [a.ap, `"${D.airports[a.ap].name}"`, a.flights, a.atfm.toFixed(3), a.punct.toFixed(2), a.taxi.toFixed(2), a.taxiCo2.toFixed(1)].join(",")));
+    const url = URL.createObjectURL(new Blob([csv.join("\n")], { type: "text/csv" }));
+    Object.assign(document.createElement("a"), { href: url, download: "airport_kpis.csv" }).click();
+    URL.revokeObjectURL(url);
+  };
+}
+
+function insights(k, all, ms, byM, cs, aps) {
+  const out = [];
+  if (byM.length > 1) {
+    const worst = byM.reduce((w, v, i) => (v.punct < byM[w].punct ? i : w), 0);
+    const best = byM.reduce((w, v, i) => (v.punct > byM[w].punct ? i : w), 0);
+    out.push(`Punctuality was lowest in <b>${mLabel(ms[worst])}</b> (${fmt(byM[worst].punct)}%) and highest in <b>${mLabel(ms[best])}</b> (${fmt(byM[best].punct)}%).`);
+  }
+  if (cs.length) {
+    const tot = cs.reduce((a, c) => a + c[1], 0);
+    out.push(`<b>${D.causes[cs[0][0]]}</b> is the largest delay cause at ${fmt(100 * cs[0][1] / tot, 0)}% of ATFM minutes.`);
+  }
+  if (aps.length > 1) {
+    const w = aps.reduce((a, b) => (b.atfm > a.atfm ? b : a));
+    out.push(`<b>${D.airports[w.ap].name}</b> has the highest ATFM delay per departure (${fmt(w.atfm, 2)} min).`);
+  }
+  out.push(`Additional taxi-out time added about <b>${fmt(k.taxiCo2, 0)} t of CO2</b>, ${fmt(100 * k.taxiCo2 / k.co2, 2)}% of total emissions in the selection.`);
+  document.getElementById("insights").innerHTML = out.map(s => `<li>${s}</li>`).join("");
+}
+
+function setup() {
+  const box = document.getElementById("f-ap");
+  const codes = Object.keys(D.airports);
+  codes.forEach(c => sel.aps.add(c));
+  box.innerHTML = `<button class="chip all" data-c="*">All</button>` +
+    codes.map(c => `<button class="chip on" data-c="${c}" title="${D.airports[c].name}">${c}</button>`).join("");
+  box.onclick = (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.c === "*") {
+      const allOn = sel.aps.size === codes.length;
+      codes.forEach(c => allOn ? sel.aps.delete(c) : sel.aps.add(c));
+    } else sel.aps.has(b.dataset.c) ? sel.aps.delete(b.dataset.c) : sel.aps.add(b.dataset.c);
+    box.querySelectorAll("button[data-c]:not([data-c='*'])").forEach(x => x.classList.toggle("on", sel.aps.has(x.dataset.c)));
+    render();
+  };
+  const f = document.getElementById("f-from"), t = document.getElementById("f-to");
+  const opts = months.map((m, i) => `<option value="${i}">${mLabel(m)} ${m.slice(0, 4)}</option>`).join("");
+  f.innerHTML = opts; t.innerHTML = opts; t.value = months.length - 1;
+  sel.to = months.length - 1;
+  f.onchange = () => { sel.from = Math.min(+f.value, sel.to); f.value = sel.from; render(); };
+  t.onchange = () => { sel.to = Math.max(+t.value, sel.from); t.value = sel.to; render(); };
+}
+
+fetch("data.json").then(r => r.json()).then(data => {
+  D = data;
+  rows = D.agg.map(r => Object.fromEntries(D.agg_cols.map((c, i) => [c, r[i]])));
+  months = [...new Set(rows.map(r => r.month))].sort();
+  setup(); render();
+  onThemeChange(render);
+});
+</script>
+</body>
+</html>

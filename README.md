@@ -1,5 +1,7 @@
 # European ATM Performance & CO2 Dashboard
 
+**🌐 Live dashboard, runs in the browser: https://ferihabircan.github.io/atm-performance-dashboard/**
+
 Interactive Streamlit dashboard that tracks the key performance indicators used
 in European air traffic management reporting, and links operational
 inefficiency to its environmental cost:
@@ -23,6 +25,9 @@ inefficiency to its environmental cost:
   [EUROCONTROL Aviation Intelligence Portal](https://ansperformance.eu/) open
   datasets) instead of the synthetic demo data.
 - Built-in feedback box, used to collect comments in user-testing sessions.
+- A static web version (GitHub Pages) that filters airports and months in the
+  browser from additive monthly aggregates. `kpis.aggregate` produces them and a
+  unit test checks that the KPIs rebuilt from aggregates equal the raw ones exactly.
 
 ![Dashboard – delay causes](docs/dashboard_causes.jpg)
 
@@ -51,6 +56,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 streamlit run app.py
 PYTHONPATH=src pytest -q
+PYTHONPATH=src python scripts/export_site_data.py   # refresh docs/ website data
 ```
 
 ## Data schema
@@ -65,6 +71,8 @@ app.py              Streamlit UI (filters, KPI tiles, charts, map, export)
 src/atm_kpi/
   data.py           synthetic data generator and CSV loader with validation
   kpis.py           KPI and CO2 calculations (pure functions, unit tested)
+scripts/            export_site_data.py: aggregates for the web dashboard
+docs/               static web dashboard (GitHub Pages)
 tests/              pytest suite with hand-checked KPI values
 ```
 

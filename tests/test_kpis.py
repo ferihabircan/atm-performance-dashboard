@@ -40,6 +40,18 @@ def test_co2_formula():
     assert e["co2_kg"] == pytest.approx(e["fuel_kg"] * 3.16)
 
 
+def test_aggregate_rebuilds_kpis_exactly(flights):
+    raw = kpis.summary(flights)
+    agg = kpis.summary_from_aggregate(kpis.aggregate(flights))
+    for k in raw:
+        assert agg[k] == pytest.approx(raw[k]), k
+    # Also for a subset of airports
+    sub = flights[flights["adep"].isin(["EBBR", "EHAM"])]
+    agg_sub = kpis.aggregate(flights).query("adep in ['EBBR', 'EHAM']")
+    assert kpis.summary_from_aggregate(agg_sub)["punctuality_pct"] == pytest.approx(
+        kpis.summary(sub)["punctuality_pct"])
+
+
 def test_cause_shares_sum_to_100(flights):
     c = kpis.delay_by_cause(flights, data.CAUSES)
     assert c["share_pct"].sum() == pytest.approx(100)
